@@ -1,9 +1,10 @@
 (ns arachne.fileset
-  (:refer-clojure :exclude [remove filter empty merge])
+  (:refer-clojure :exclude [remove filter empty merge hash])
   (:require [arachne.fileset.specs]
             [arachne.fileset.impl :as impl]
             [arachne.fileset.util :as futil]
-            [arachne.fileset.tmpdir :as tmpdir]))
+            [arachne.fileset.tmpdir :as tmpdir]
+            [clojure.java.io :as io]))
 
 ;; These can be truly proces  global, because they only contain immmutable
 ;; content-addressed hard links or one-off subdirectories.
@@ -65,12 +66,10 @@
 
 (declare filter)
 (defn remove
-  "Return a Fileset with the specified files removed. Files may be identified as
-  path strings or TmpFile instances."
-  [fileset & file-identifiers]
-  (let [file-identifiers (set file-identifiers)]
-    (filter fileset #(not (or (file-identifiers %)
-                              (file-identifiers (impl/-path %)))))))
+  "Return a Fileset with the specified paths removed."
+  [fileset & paths]
+  (let [paths (set paths)]
+    (filter fileset #(not (paths (impl/-path %))))))
 
 (defn diff
   "Return a Fileset containing only the files that are different in `added` and
@@ -115,9 +114,30 @@
   (filter fileset (comp pred :meta)))
 
 (defn ls
-  "Return the the files in the fileset as a set of TmpFile records"
+  "Return a collection of the paths present in the fileset"
   [fileset]
-  (impl/-ls fileset))
+  (map impl/-path (impl/-ls fileset)))
+
+(defn hash
+  "Return the MD5 hash of the content of the file at the specified path in the
+  fileset"
+  [fileset path]
+  (impl/-hash (get-in fileset [:tree path])))
+
+(defn timestamp
+  "Return the 'last modified' timestamp of the file (as a long) at the specified
+   path in the fileset"
+  [fileset path]
+  (impl/-time (get-in fileset [:tree path])))
+
+(defn content
+  "Opens and returns a java.io.InputStream of the contents of the file at the given path"
+  [fileset path]
+  (let [tmpf (get-in fileset [:tree path])
+        _ (println "tmpf:" tmpf)
+        blob (.toPath (:blob fileset))
+        filename (.resolve blob (impl/-id tmpf))]
+    (io/input-stream (.toFile filename))))
 
 (defn empty
   "Create a new empty fileset with the same cache dir as the input"
@@ -142,3 +162,10 @@
    (assoc a :tree (merge-with merge-tempfile (:tree a) (:tree b))))
   ([a b & more]
    (reduce merge a (cons b more))))
+
+(defn tmpdir!
+  "Return a new temporary directory as a java.io.File. The directory will be in
+  the system temporary directory, and tracked for deletion when the JVM
+  terminates (using a JVM shutdown hook.)"
+  []
+  (tmpdir/tmpdir!))

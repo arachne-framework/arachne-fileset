@@ -63,8 +63,7 @@
 
 (s/fdef arachne.fileset/remove
   :args (s/cat :fileset ::fileset
-               :file-identifiers (s/+ (s/or :path ::path
-                                            :tmpfile ::tmpfile)))
+               :paths (s/+ ::path))
   :ret ::fileset)
 
 (s/fdef arachne.fileset/diff
@@ -105,7 +104,22 @@
 
 (s/fdef arachne.fileset/ls
   :args (s/cat :fileset ::fileset)
-  :ret (s/coll-of ::tmpfile))
+  :ret (s/coll-of ::path))
+
+(s/fdef arachne.fileset/hash
+  :args (s/cat :fileset ::fileset
+               :path ::path)
+  :ret string?)
+
+(s/fdef arachne.fileset/timestamp
+  :args (s/cat :fileset ::fileset
+               :path ::path)
+  :ret integer?)
+
+(s/fdef arachne.fileset/content
+  :args (s/cat :fileset ::fileset
+               :path ::path)
+  :ret (partial instance? java.io.InputStream))
 
 (s/fdef arachne.fileset/empty
   :args (s/cat :fileset ::fileset)
