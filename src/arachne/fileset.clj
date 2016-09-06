@@ -134,7 +134,6 @@
   "Opens and returns a java.io.InputStream of the contents of the file at the given path"
   [fileset path]
   (let [tmpf (get-in fileset [:tree path])
-        _ (println "tmpf:" tmpf)
         blob (.toPath (:blob fileset))
         filename (.resolve blob (impl/-id tmpf))]
     (io/input-stream (.toFile filename))))
