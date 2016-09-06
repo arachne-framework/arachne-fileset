@@ -1,4 +1,4 @@
-(defproject arachne-fileset "0.1.0-SNAPSHOT"
+(defproject org.arachne-framework/arachne-fileset "1.0.0-beta1"
   :description "Tools for managing immutable filesets"
   :url "http://github.com/arachne-framework/arachne-fileset"
   :license {:name "Eclipse Public License"
