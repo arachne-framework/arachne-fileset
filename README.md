@@ -86,15 +86,15 @@ Under the hood, the system maintains a directory (the "blob store") full of cont
 
 A fileset is essentialy just a map of user-level paths (e.g, `"foo/bar.clj"`) to the paths of the corresponding blobs in the blob store (e.g, `"0ac6536c01c4720c6eee617785027c66.1472514953000"`).
 
-Wherever possible (e.g, when using `commit!`, or caching), hard links are used to avoid performing a full copy of a file's contents. This makes most operations (aside from the initial `add!`) fast and lightweight.
+Wherever possible (e.g, when using `commit!`, or caching), hard links are used to avoid performing a full copy of a file's contents. This makes most operations (aside from the initial `add`) fast and lightweight.
 
 ## Differences from Boot
 
 - When you `commit!`, you choose a directory instead using an implicit one.
 - Multiple fileset instances are fully supported without restrictions, including use in multithreaded environments.
-- Filesets no longer have any concept of roles, and no "source", "resource", "input" or "output" status. This can be trivally implemented using metadata, if desired.
+- Filesets no longer have any concept of roles, and no "source", "resource", "input" or "output" status. This can be trivially implemented using metadata, if desired.
 -  Filesets have been decoupled from the concept of a classpath; they now have nothing to do with eachother (unless you happen to `commit!` to a directory on the classpath.)
-- The API has been rewoked such that users do not need to interact with the underlying ITmpFile instances. Several convenience functions have been added.
+- The API has been reworked such that users don't need to interact with the underlying ITmpFile instances. Several convenience functions have been added.
 
 ## License
 
