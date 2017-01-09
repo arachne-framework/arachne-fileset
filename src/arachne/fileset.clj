@@ -168,3 +168,11 @@
   terminates (using a JVM shutdown hook.)"
   []
   (tmpdir/tmpdir!))
+
+(defn checksum
+  "Return the MD5 checksum of the fileset itself. Two filesets with identical contents will have the same hash.
+
+  If timestamps? is true, will incorporate the file's \"last modified\" date into the hash
+  function, otherwise will hash based only on file names and contents"
+  [fs timestamps?]
+  (impl/-checksum fs timestamps?))

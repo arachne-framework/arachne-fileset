@@ -9,7 +9,7 @@
   (:import [org.apache.commons.io FileUtils]))
 
 
-(stest/instrument)
+;(stest/instrument)
 
 (deftest test-basic-add-update-commit
   (let [fs (fs/fileset)
@@ -103,3 +103,30 @@
       (is (= (.lastModified f) (fs/timestamp fs "file1.md")))
       (is (= (fsutil/md5 f) (fs/hash fs "file1.md")))
       (is (= (slurp f) (slurp (fs/content fs "file1.md")))))))
+
+(deftest test-checksums
+  (let [original-fs (fs/add (fs/fileset) (io/file "test/test-assets"))
+        commit-dir (fs/tmpdir!)
+        working-dir (fs/tmpdir!)
+        _ (fs/commit! original-fs commit-dir)
+        _ (FileUtils/copyDirectory commit-dir working-dir false)
+        fs (fs/add (fs/fileset) (io/file working-dir))
+        fs' (fs/add (fs/fileset) (io/file working-dir))
+        _ (.setLastModified (io/file working-dir "file1.md") 0)
+        fs'' (fs/add (fs/fileset) (io/file working-dir))
+        _ (spit (io/file working-dir "file1.md") "boo")
+        fs''' (fs/add (fs/fileset) (io/file working-dir))]
+    (testing "checksums not including timestamps"
+      (is (= (fs/checksum fs false)
+             (fs/checksum fs' false)
+             (fs/checksum fs'' false)))
+      (is (not= (fs/checksum fs'' false)
+                (fs/checksum fs''' false))))
+    (testing "checksums including timestamps"
+      (is (= (fs/checksum fs true)
+             (fs/checksum fs' true)))
+      (is (not= (fs/checksum fs true)
+                (fs/checksum fs'' true))))))
+
+
+

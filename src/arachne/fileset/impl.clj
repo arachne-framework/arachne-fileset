@@ -6,7 +6,8 @@
     [arachne.fileset.util :as util :refer [with-let debug warn]]
     [clojure.java.io        :as io]
     [clojure.set            :as set]
-    [clojure.data           :as data])
+    [clojure.data           :as data]
+    [valuehash.api          :as vh])
   (:import
     [java.io File]
     [java.util Properties]
@@ -38,7 +39,8 @@
   (-add            [this src-dir opts])
   (-add-cached     [this cache-key cache-fn opts])
   (-mv             [this from-path to-path])
-  (-cp             [this src-file dest-tmpfile]))
+  (-cp             [this src-file dest-tmpfile])
+  (-checksum       [this timestamps?]))
 
 (defrecord TmpFile [bdir path id hash time meta]
   ITmpFile
@@ -306,4 +308,10 @@
     (let [hash (util/md5 src-file)
           p'   (-path dest-tmpfile)]
       (add-blob! blob src-file hash *hard-link*)
-      (assoc this :tree (merge tree {p' (assoc dest-tmpfile :id hash)})))))
+      (assoc this :tree (merge tree {p' (assoc dest-tmpfile :id hash)}))))
+
+  (-checksum [this timestamps?]
+    (let [basis (set (map (fn [tmpfile]
+                            (select-keys tmpfile [:path :hash (when timestamps? :time)]))
+                       (vals (:tree this))))]
+      (vh/md5-str basis))))
