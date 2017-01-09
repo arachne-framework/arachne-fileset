@@ -21,7 +21,9 @@
 
 (def link-opts    (into-array LinkOption []))
 (def tmp-attrs    (into-array FileAttribute []))
-(def copy-opts    (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING]))
+(def move-opts    (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING]))
+(def copy-opts    (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING
+                                                  StandardCopyOption/COPY_ATTRIBUTES]))
 (def continue     FileVisitResult/CONTINUE)
 
 (defprotocol ITmpFile
@@ -78,7 +80,7 @@
         (let [name (str (.getName out (dec (.getNameCount out))))
               tmp  (Files/createTempFile blob name nil tmp-attrs)]
           (Files/copy src tmp copy-opts)
-          (Files/move tmp out copy-opts)
+          (Files/move tmp out move-opts)
           (.setReadOnly (.toFile out)))))))
 
 (defn- mkvisitor

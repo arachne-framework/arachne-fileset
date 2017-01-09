@@ -128,5 +128,9 @@
       (is (not= (fs/checksum fs true)
                 (fs/checksum fs'' true))))))
 
-
-
+(deftest test-date-preservation
+  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))
+        tmpdir (fs/tmpdir!)]
+    (fs/commit! fs tmpdir)
+    (is (= (.lastModified (io/file tmpdir "file1.md"))
+           (.lastModified (io/file "test/test-assets/file1.md"))))))
