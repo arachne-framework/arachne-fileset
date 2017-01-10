@@ -7,6 +7,7 @@
             [clojure.java.io :as io]))
 
 (def fileset impl/fileset)
+(def default-cache-dir impl/default-cache-dir)
 
 ;; Idea: we could theoretically do garbage collection, if space in the blob store becomes an issue:
 ;; - find all instances of FileSet (would require registering in a weak map at creation)
