@@ -6,18 +6,7 @@
             [arachne.fileset.tmpdir :as tmpdir]
             [clojure.java.io :as io]))
 
-;; These can be truly proces  global, because they only contain immmutable
-;; content-addressed hard links or one-off subdirectories.
-(def global-blob-dir (memoize tmpdir/tmpdir!))
-(def global-scratch-dir (memoize tmpdir/tmpdir!))
-(def default-cache-dir (memoize tmpdir/tmpdir!))
-
-(defn fileset
-  "Create a new, empty fileset. Optionally, takes a directory to use as a
-  persistent cache, otherwise caches in a process-wide temporary directory."
-  ([] (fileset (default-cache-dir)))
-  ([cache-dir]
-   (impl/->TmpFileSet {} (global-blob-dir) (global-scratch-dir) cache-dir)))
+(def fileset impl/fileset)
 
 ;; Idea: we could theoretically do garbage collection, if space in the blob store becomes an issue:
 ;; - find all instances of FileSet (would require registering in a weak map at creation)
@@ -28,7 +17,12 @@
 (defn commit!
   "Persist the immutable fileset to a concrete directory. The emitted
   files are hard links to the fileset's internal blob storage, and therefore
-  immutable."
+  immutable.
+
+  Note that `commit!` assumes that it is the only process modifying the
+  destination directory. If another privileged process deletes any of the
+  contents of the commit dir, they might not be re-created on subsequent
+  commits."
   [fs dir]
   (impl/-commit! fs dir))
 

@@ -134,3 +134,19 @@
     (fs/commit! fs tmpdir)
     (is (= (.lastModified (io/file tmpdir "file1.md"))
            (.lastModified (io/file "test/test-assets/file1.md"))))))
+
+;; This test has a sleep in it, to simulate a *later* editing of the commit dir. It's true that the strategy we've
+;; selected won't work if the commit dir is *immediately* altered... we might still use a recent (but stale) cache in
+;; that case. Realistically, though, that isn't what we're trying to prevent, so the sleep is fine.
+(deftest bust-cache-when-commit-dir-deleted
+  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))
+        tmpdir (fs/tmpdir!)]
+    (fs/commit! fs tmpdir)
+    (Thread/sleep 1200)
+    (FileUtils/cleanDirectory tmpdir)
+    (fs/commit! fs tmpdir)
+    (is (.exists (io/file tmpdir "file1.md")))
+    (Thread/sleep 1200)
+    (.delete (io/file tmpdir "file1.md"))
+    (fs/commit! fs tmpdir)
+    (is (.exists (io/file tmpdir "file1.md")))))

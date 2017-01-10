@@ -4,6 +4,7 @@
 (ns arachne.fileset.impl
   (:require
     [arachne.fileset.util :as util :refer [with-let debug warn]]
+    [arachne.fileset.tmpdir :as tmpdir]
     [clojure.java.io        :as io]
     [clojure.set            :as set]
     [clojure.data           :as data]
@@ -14,6 +15,12 @@
     [java.nio.file Path Files SimpleFileVisitor LinkOption StandardCopyOption
                    FileVisitResult]
     [java.nio.file.attribute FileAttribute]))
+
+;; These can be truly proces  global, because they only contain immmutable
+;; content-addressed hard links or one-off subdirectories.
+(def global-blob-dir (memoize tmpdir/tmpdir!))
+(def global-scratch-dir (memoize tmpdir/tmpdir!))
+(def default-cache-dir (memoize tmpdir/tmpdir!))
 
 (def CACHE_VERSION "1.0.0")
 (def mem-cache (atom {}))
@@ -52,6 +59,14 @@
   (-meta [this] meta)
   (-hash [this] hash)
   (-time [this] time))
+
+(declare ->TmpFileSet)
+(defn fileset
+  "Create a new, empty fileset. Optionally, takes a directory to use as a
+  persistent cache, otherwise caches in a process-wide temporary directory."
+  ([] (fileset (default-cache-dir)))
+  ([cache-dir]
+   (->TmpFileSet {} (global-blob-dir) (global-scratch-dir) cache-dir)))
 
 (defn- file
   [^File dir tmpfile]
@@ -234,14 +249,33 @@
   [a b]
   (assoc (merge a b) :meta (merge (:meta a) (:meta b))))
 
+(defn- current-fileset
+  "Return a new fileset representing the current state of a directory"
+  [^File dir]
+  (let [fs (fileset)]
+    (-add fs dir {})))
+
+(defn- prev-fileset
+  "Determine the fileset previously associated with the given directory (either from the cache, or
+   from inspecting the dir)"
+  [^File dir]
+  (let [path (.getCanonicalPath dir)
+        [cached-fs cached-ts] (get @prev-fs path)]
+    (if (and cached-fs (<= (.lastModified dir) cached-ts))
+      cached-fs
+      (when (seq (.list dir))
+        ;; Dir already exists and is not empty, but is newer than cache (or cache doesn't exist)
+        (current-fileset dir)))))
+
 (defrecord TmpFileSet [tree blob scratch cache]
   ITmpFileSet
 
   (-ls [this]
     (set (vals tree)))
 
+  ;; detect the badness via changed timestamp on the output dir: if it differs from wha we thought we had cached, invalidate the cache and rebuild
   (-commit! [this dir]
-    (let [prev (get @prev-fs (.getCanonicalPath ^File dir))
+    (let [prev (prev-fileset dir)
           {:keys [added removed changed]} (diff* prev this [:id])]
       (debug "Committing fileset...\n")
       (doseq [tmpf (set/union (-ls removed) (-ls changed))
@@ -267,7 +301,7 @@
                                (util/hard-link src dst)))
                          (recur this tmpfs))))]
         (with-let [_ this]
-          (swap! prev-fs assoc (.getCanonicalPath ^File dir) this)
+          (swap! prev-fs assoc (.getCanonicalPath ^File dir) [this (.lastModified ^File dir)])
           (debug "Commit complete.\n")))))
 
   (-rm [this tmpfiles]
