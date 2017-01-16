@@ -155,3 +155,8 @@
   (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
     (is (= "this is a file" (slurp (fs/content fs "file1.md"))))
     (is (nil? (fs/content fs "no-such-file.md")))))
+
+(deftest test-file
+  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
+    (is (= "this is a file" (slurp (fs/file fs "file1.md"))))
+    (is (nil? (fs/file fs "no-such-file.md")))))

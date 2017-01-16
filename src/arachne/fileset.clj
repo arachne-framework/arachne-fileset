@@ -125,14 +125,23 @@
   [fileset path]
   (impl/-time (get-in fileset [:tree path])))
 
-(defn content
-  "Opens and returns a java.io.InputStream of the contents of the file at the given path, or nil
-   if the path does not exist."
+(defn file
+  "Returns a java.io.File of the underlying file at the given path. Note that the given file MUST NOT be
+   modified, at the risk of corrupting the fileset.
+
+   Returns nil if the path does not exist in the fileset."
   [fileset path]
   (when-let [tmpf (get-in fileset [:tree path])]
     (let [blob (.toPath (:blob fileset))
           filename (.resolve blob (impl/-id tmpf))]
-      (io/input-stream (.toFile filename)))))
+      (.toFile filename))))
+
+(defn content
+  "Opens and returns a java.io.InputStream of the contents of the file at the given path, or nil
+   if the path does not exist."
+  [fileset path]
+  (when-let [f (file fileset path)]
+    (io/input-stream f)))
 
 (defn empty
   "Create a new empty fileset with the same cache dir as the input"

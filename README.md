@@ -42,6 +42,7 @@ For each path, you can use any of the following functions:
 - `hash` - get the MD5 hash of a file
 - `timestamp` - get the "last modified" time of a file
 - `content` - open a `java.io.InputStream` on the content of the file.
+- `file` - Get an immutable `java.io.File` for the File representation. The file will be located in a temp directory and be named according by its content hash and timestamp, not the file path.
 
 #### Committing
 
