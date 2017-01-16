@@ -126,12 +126,13 @@
   (impl/-time (get-in fileset [:tree path])))
 
 (defn content
-  "Opens and returns a java.io.InputStream of the contents of the file at the given path"
+  "Opens and returns a java.io.InputStream of the contents of the file at the given path, or nil
+   if the path does not exist."
   [fileset path]
-  (let [tmpf (get-in fileset [:tree path])
-        blob (.toPath (:blob fileset))
-        filename (.resolve blob (impl/-id tmpf))]
-    (io/input-stream (.toFile filename))))
+  (when-let [tmpf (get-in fileset [:tree path])]
+    (let [blob (.toPath (:blob fileset))
+          filename (.resolve blob (impl/-id tmpf))]
+      (io/input-stream (.toFile filename)))))
 
 (defn empty
   "Create a new empty fileset with the same cache dir as the input"

@@ -150,3 +150,8 @@
     (.delete (io/file tmpdir "file1.md"))
     (fs/commit! fs tmpdir)
     (is (.exists (io/file tmpdir "file1.md")))))
+
+(deftest test-content
+  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
+    (is (= "this is a file" (slurp (fs/content fs "file1.md"))))
+    (is (nil? (fs/content fs "no-such-file.md")))))
