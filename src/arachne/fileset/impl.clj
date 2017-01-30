@@ -105,7 +105,7 @@
       (visitFile [^Path path attr]
         (with-let [_ continue]
           (let [p (str (.relativize root path))]
-            (try (let [h (util/md5 (.toFile path))
+            (try (let [h (util/md5 path)
                        t (.toMillis (Files/getLastModifiedTime path link-opts))
                        i (str h "." t)]
                    (add-blob! blob path i link)

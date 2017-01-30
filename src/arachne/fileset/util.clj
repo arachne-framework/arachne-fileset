@@ -2,7 +2,7 @@
   (:require [clojure.tools.logging :as log])
   (:import
     [java.io File FileInputStream]
-    [java.nio.file Files StandardCopyOption FileVisitOption]
+    [java.nio.file Files StandardCopyOption FileVisitOption OpenOption]
     [java.security MessageDigest]))
 
 (defmacro with-let
@@ -28,8 +28,10 @@
 
 (defn md5
   "Get the MD5 hash of a file"
-  [^File file]
-  (with-open [fis (FileInputStream. file)]
+  [file]
+  (with-open [fis (if (instance? File file)
+                    (FileInputStream. file)
+                    (Files/newInputStream file (into-array java.nio.file.OpenOption [])))]
     (let [md (MessageDigest/getInstance "MD5")
           buf (byte-array 1024)]
       (loop [n (.read fis buf)]
