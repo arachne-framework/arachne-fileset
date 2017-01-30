@@ -28,8 +28,11 @@
   (impl/-commit! fs dir))
 
 (defn add
-  "Return a Fileset with all the files in the given directory added. Options are
-  as follows:
+  "Return a Fileset with all the files in the given directory added.
+
+   The directory may be a java.io.File or java.nio.Path object.
+
+   Options are as follows:
 
   :include - only add files that match regexes in this collection
   :exclude - do not add files that match regexes in this collection (takes

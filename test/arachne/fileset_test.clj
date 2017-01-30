@@ -6,8 +6,8 @@
             [arachne.fileset :as fs]
             [arachne.fileset.specs :as fss]
             [arachne.fileset.util :as fsutil])
-  (:import [org.apache.commons.io FileUtils]))
-
+  (:import [org.apache.commons.io FileUtils]
+           [java.nio.file Paths]))
 
 ;(stest/instrument)
 
@@ -158,5 +158,10 @@
 
 (deftest test-file
   (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
+    (is (= "this is a file" (slurp (fs/file fs "file1.md"))))
+    (is (nil? (fs/file fs "no-such-file.md")))))
+
+(deftest test-nio-paths
+  (let [fs (fs/add (fs/fileset) (Paths/get "test/test-assets" (into-array String [])))]
     (is (= "this is a file" (slurp (fs/file fs "file1.md"))))
     (is (nil? (fs/file fs "no-such-file.md")))))

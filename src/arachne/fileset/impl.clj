@@ -114,9 +114,11 @@
                    (debug "Tmpdir: file not found: %s\n" (.toString p))))) )))))
 
 (defn- dir->tree!
-  [^File dir ^File blob]
+  [dir ^File blob]
   (locking dir->tree!
-    (let [root (.toPath dir)]
+    (let [root (if (instance? java.io.File dir)
+                 (.toPath dir)
+                 dir)]
       @(with-let [tree (atom {})]
          (util/walk-file-tree root (mkvisitor root blob tree *hard-link*))))))
 
