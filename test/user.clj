@@ -1,8 +1,8 @@
 (ns user
   (:require
-    [clojure.spec :as s]
-    [clojure.spec.test :as st]
-    [clojure.spec.gen :as g]
+    [clojure.spec.alpha :as s]
+    [clojure.spec.test.alpha :as st]
+    [clojure.spec.gen.alpha :as g]
     [clojure.java.io :as io]
     [clojure.test :as t :refer [deftest is]]))
 

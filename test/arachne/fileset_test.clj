@@ -1,8 +1,8 @@
 (ns arachne.fileset-test
   (:require [clojure.test :refer :all]
             [clojure.java.io :as io]
-            [clojure.spec :as s]
-            [clojure.spec.test :as stest]
+            [clojure.spec.alpha :as s]
+            [clojure.spec.test.alpha :as stest]
             [arachne.fileset :as fs]
             [arachne.fileset.specs :as fss]
             [arachne.fileset.util :as fsutil])

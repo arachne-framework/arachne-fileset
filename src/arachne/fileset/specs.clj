@@ -1,5 +1,5 @@
 (ns arachne.fileset.specs
-  (:require [clojure.spec :as s]
+  (:require [clojure.spec.alpha :as s]
             [arachne.fileset.impl :as impl])
   (:import [java.io File]))
 
