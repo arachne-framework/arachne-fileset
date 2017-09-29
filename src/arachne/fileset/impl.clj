@@ -10,11 +10,13 @@
     [clojure.data           :as data]
     [valuehash.api          :as vh])
   (:import
-    [java.io File]
-    [java.util Properties]
-    [java.nio.file Path Files SimpleFileVisitor LinkOption StandardCopyOption
-                   FileVisitResult]
-    [java.nio.file.attribute FileAttribute]))
+   [java.io File]
+   [java.util Properties]
+   [java.nio.file Path Files SimpleFileVisitor LinkOption StandardCopyOption
+                  StandardOpenOption FileVisitResult]
+   [java.nio.file.attribute FileAttribute]
+   [java.nio.channels Channels FileChannel]
+   [org.apache.commons.io FileUtils]))
 
 ;; These can be truly proces  global, because they only contain immmutable
 ;; content-addressed hard links or one-off subdirectories.
@@ -34,12 +36,12 @@
 (def continue     FileVisitResult/CONTINUE)
 
 (defprotocol ITmpFile
-  (-id   [this])
-  (-bdir [this])
   (-path [this])
   (-meta [this])
   (-hash [this])
-  (-time [this]))
+  (-time [this])
+  (-channel [this])
+  (-file [this]))
 
 (defprotocol ITmpFileSet
   (-ls             [this])
@@ -51,14 +53,20 @@
   (-cp             [this src-file dest-tmpfile])
   (-checksum       [this timestamps?]))
 
-(defrecord TmpFile [bdir path id hash time meta]
+(defrecord TmpFile [bdir path id hash time meta channel]
   ITmpFile
-  (-id   [this] id)
-  (-bdir [this] bdir)
   (-path [this] path)
   (-meta [this] meta)
   (-hash [this] hash)
-  (-time [this] time))
+  (-time [this] time)
+  (-channel [this] channel)
+  (-file [this]
+    (let [f (io/file bdir id)]
+      (when-not (.exists f)
+        (locking channel
+          (.position channel 0)
+          (FileUtils/copyToFile (Channels/newInputStream channel) f)))
+      f)))
 
 (declare ->TmpFileSet)
 (defn fileset
@@ -98,6 +106,12 @@
           (Files/move tmp out move-opts)
           (.setReadOnly (.toFile out)))))))
 
+(defn- channel
+  "Return an open READ channel to the given path. A reference to this object may be
+   maintained to keep the tmpfile from being deleted."
+  [path]
+  (FileChannel/open path (into-array [StandardOpenOption/READ])))
+
 (defn- mkvisitor
   [^Path root ^File blob tree link]
   (let [m {:bdir blob}]
@@ -107,9 +121,12 @@
           (let [p (str (.relativize root path))]
             (try (let [h (util/md5 path)
                        t (.toMillis (Files/getLastModifiedTime path link-opts))
-                       i (str h "." t)]
+                       i (str h "." t)
+                       ch (channel path)]
                    (add-blob! blob path i link)
-                   (swap! tree assoc p (map->TmpFile (assoc m :path p :id i :hash h :time t))))
+                   (swap! tree assoc p (map->TmpFile
+                                         (assoc m :path p :id i :hash h
+                                                  :time t :channel ch))))
                  (catch java.nio.file.NoSuchFileException _
                    (debug "Tmpdir: file not found: %s\n" (.toString p))))) )))))
 
@@ -139,7 +156,8 @@
       (-> #(let [id   (.getProperty p %2)
                  hash (subs id 0 32)
                  time (Long/parseLong (subs id 33))
-                 m    {:id id :path %2 :hash hash :time time :bdir bdir}]
+                 ch (channel (.toPath manifile))
+                 m    {:id id :path %2 :hash hash :time time :bdir bdir :channel ch}]
              (->> m map->TmpFile (assoc %1 %2)))
           (reduce {} (enumeration-seq (.propertyNames p)))))))
 
@@ -189,8 +207,8 @@
     (doseq [[path newtmp] new]
       (when-let [oldtmp (get old path)]
         (debug "Merging %s...\n" path)
-        (let [newf   (io/file (-bdir newtmp) (-id newtmp))
-              oldf   (io/file (-bdir oldtmp) (-id oldtmp))
+        (let [newf   (-file newtmp)
+              oldf   (-file oldtmp)
               mergef (doto (io/file tmp path) io/make-parents)]
           (apply-mergers! mergers oldf path newf mergef))))))
 
@@ -284,7 +302,6 @@
               :let [prev (get-in prev [:tree (-path tmpf)])
                     exists? (.exists ^File (file dir prev))
                     op (if exists? "removing" "no-op")]]
-        (debug "Commit: %-8s %s %s...\n" op (-id prev) (-path prev))
         (when exists? (io/delete-file (file dir prev))))
       (let [this (loop [this this
                         [tmpf & tmpfs]
@@ -293,14 +310,13 @@
                    (or (and (not tmpf) this)
                        (let [p    (-path tmpf)
                              dst  (file dir tmpf)
-                             src  (io/file (-bdir tmpf) (-id tmpf))
+                             src  (-file tmpf)
                              err? (fatal-conflict? dst)
                              this (or (and (not err?) this)
                                       (update-in this [:tree] dissoc p))]
                          (if err?
                            (warn "Merge conflict: not adding %s\n" p)
-                           (do (debug "Commit: adding   %s %s...\n" (-id tmpf) p)
-                               (util/hard-link src dst)))
+                           (util/hard-link src dst))
                          (recur this tmpfs))))]
         (with-let [_ this]
           (swap! prev-fs assoc (.getCanonicalPath ^File dir) [this (.lastModified ^File dir)])

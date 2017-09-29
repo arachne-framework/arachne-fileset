@@ -165,3 +165,14 @@
   (let [fs (fs/add (fs/fileset) (Paths/get "test/test-assets" (into-array String [])))]
     (is (= "this is a file" (slurp (fs/file fs "file1.md"))))
     (is (nil? (fs/file fs "no-such-file.md")))))
+
+(deftest test-deletion-recovery
+  ;; Handles a regression where temp files could be deleted out from
+  ;; under long-running processes
+  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
+    (is (= "this is a file" (slurp (fs/content fs "file1.md"))))
+    (let [f (fs/file fs "file1.md")]
+      (.delete f)
+      (is (not (.exists f))))
+    (is (.exists (fs/file fs "file1.md")))
+    (is (= "this is a file" (slurp (fs/content fs "file1.md"))))))

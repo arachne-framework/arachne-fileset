@@ -135,9 +135,7 @@
    Returns nil if the path does not exist in the fileset."
   [fileset path]
   (when-let [tmpf (get-in fileset [:tree path])]
-    (let [blob (.toPath (:blob fileset))
-          filename (.resolve blob (impl/-id tmpf))]
-      (.toFile filename))))
+    (impl/-file tmpf)))
 
 (defn content
   "Opens and returns a java.io.InputStream of the contents of the file at the given path, or nil
