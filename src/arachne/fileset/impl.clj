@@ -66,7 +66,10 @@
         (locking channel
           (.position channel 0)
           (FileUtils/copyToFile (Channels/newInputStream channel) f)))
-      f)))
+      f))
+  Object
+  (finalize [_]
+    (when channel (.close channel))))
 
 (declare ->TmpFileSet)
 (defn fileset
