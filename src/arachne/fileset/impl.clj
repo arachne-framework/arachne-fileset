@@ -107,7 +107,8 @@
               tmp  (Files/createTempFile blob name nil tmp-attrs)]
           (Files/copy src tmp copy-opts)
           (Files/move tmp out move-opts)
-          (.setReadOnly (.toFile out)))))))
+          (.setReadOnly (.toFile out)))))
+    out))
 
 (defn- channel
   "Return an open READ channel to the given path. A reference to this object may be
@@ -125,8 +126,7 @@
             (try (let [h (util/md5 path)
                        t (.toMillis (Files/getLastModifiedTime path link-opts))
                        i (str h "." t)
-                       ch (channel path)]
-                   (add-blob! blob path i link)
+                       ch (channel (add-blob! blob path i link))]
                    (swap! tree assoc p (map->TmpFile
                                          (assoc m :path p :id i :hash h
                                                   :time t :channel ch))))
