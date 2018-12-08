@@ -67,13 +67,6 @@ There are several ways to create a new fileset that does not contain certain fil
 - `remove` removes the files at specific paths from a fileset.
 - `filter` applies a predicate to each file in the fileset (using the internal tempfile instance) and returns a fileset containing only files for which the predicate returns true.
 - `filter-meta` applies a predicate to the *metadata* of each file in the fileset and returns a fileset containing only files for which the predicate returns true.
-- `empty` removes *all* the files from a fileset. This is different from simply creating a new fileset because it preserves the cache directory of the original (see *caching* below.)
-
-#### Caching
-
-Files may be cached to avoid unnecessary transformations or file manipulation. Caches can be persistent, even between processes. To create a fileset backed by a persistent cache, pass a directory to use as the cache (as a `java.io.File`) as an argument to `fileset` when creating a fileset.
-
-Then, to use the cache, use `add-cached` instead of `add`. Instead of taking a directory of files to add, `add-cached` takes a cache key and a cache function. If the key is found in the cache, the cached files are simply added to the fileset. If the key is *not* found, the cache function is invoked and passed a temporary directory (as a `java.io.File`.) The cache function is expected to populate the temporary directory; the resulting files are added to both the fileset and to the cache.
 
 #### Temporary files
 
@@ -87,11 +80,34 @@ Under the hood, the system maintains a directory (the "blob store") full of cont
 
 A fileset is essentialy just a map of user-level paths (e.g, `"foo/bar.clj"`) to the paths of the corresponding blobs in the blob store (e.g, `"0ac6536c01c4720c6eee617785027c66.1472514953000"`).
 
-Wherever possible (e.g, when using `commit!`, or caching), hard links are used to avoid performing a full copy of a file's contents. This makes most operations (aside from the initial `add`) fast and lightweight.
+Wherever possible (e.g, when using `commit!`), hard links to the blob store are used to avoid performing a full copy of a file's contents. This makes most operations (aside from the initial `add`) fast and lightweight.
+
+## Resource Consumption Notes
+
+The library maintains an open file handle to each file in a
+fileset. This is important, because it prevents files from being
+deleted from underneath the blob store in long-running processes
+(which Arachne servers are.)
+
+These file handles are released in the `.finalize` method of each JVM
+object representing a tmpfile; that is, after no references to it
+remain and they are garbage collected by the JVM.
+
+However, if you are working with filesets containing many (on the
+order of tens of thousands) of files, or if you're churning through
+and modifying files in a fileset faster than the old versions can be
+garbage collected, it is possible you will see a "too many open files"
+exception. If this occurrs, you can either increase your system's open
+file limit or decrease the number of files in active filesets.
+
+If you're experiencing this problem in a long-running dev session, it
+might also be worth calling `(System/gc)` explicitly to force old
+filesets to be cleaned up (releasing their resources.)
 
 ## Differences from Boot
 
 - When you `commit!`, you choose a directory instead using an implicit one.
+- Caching has been disabled, 
 - Multiple fileset instances are fully supported without restrictions, including use in multithreaded environments.
 - Filesets no longer have any concept of roles, and no "source", "resource", "input" or "output" status. This can be trivially implemented using metadata, if desired.
 -  Filesets have been decoupled from the concept of a classpath; they now have nothing to do with eachother (unless you happen to `commit!` to a directory on the classpath.)

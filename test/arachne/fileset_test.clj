@@ -9,7 +9,14 @@
   (:import [org.apache.commons.io FileUtils]
            [java.nio.file Paths]))
 
-;(stest/instrument)
+(comment
+
+  (def fs (fs/fileset))
+  (def f1 (fs/add fs (io/file "test/test-assets")))
+  (def f1 nil)
+  (System/gc)
+
+  )
 
 (deftest test-basic-add-update-commit
   (let [fs (fs/fileset)
@@ -78,24 +85,6 @@
       (is (= #{"file1.out" "file2.out"}
             (set (map #(.getName %) files)))))))
 
-(deftest test-caching
-  (let [cache (fs/tmpdir!)
-        fs-a (fs/fileset cache)
-        fs-b (fs/fileset cache)
-        invocations (atom 0)
-        cachefn (fn [dir]
-                  (swap! invocations inc)
-                  (spit (io/file dir "file.out") "OUTPUT"))
-        fs-a (fs/add-cached fs-a "aaa" cachefn)
-        fs-b (fs/add-cached fs-b "aaa" cachefn)
-        dest-a (fs/tmpdir!)
-        dest-b (fs/tmpdir!)]
-    (fs/commit! fs-a dest-a)
-    (fs/commit! fs-b dest-b)
-    (is (= "OUTPUT" (slurp (io/file dest-a "file.out"))))
-    (is (= "OUTPUT" (slurp (io/file dest-b "file.out"))))
-    (is (= 1 @invocations))))
-
 (deftest test-file-access
   (let [fs (fs/fileset)
         fs (fs/add fs (io/file "test/test-assets"))]
@@ -135,22 +124,6 @@
     (is (= (.lastModified (io/file tmpdir "file1.md"))
            (.lastModified (io/file "test/test-assets/file1.md"))))))
 
-;; This test has a sleep in it, to simulate a *later* editing of the commit dir. It's true that the strategy we've
-;; selected won't work if the commit dir is *immediately* altered... we might still use a recent (but stale) cache in
-;; that case. Realistically, though, that isn't what we're trying to prevent, so the sleep is fine.
-(deftest bust-cache-when-commit-dir-deleted
-  (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))
-        tmpdir (fs/tmpdir!)]
-    (fs/commit! fs tmpdir)
-    (Thread/sleep 1200)
-    (FileUtils/cleanDirectory tmpdir)
-    (fs/commit! fs tmpdir)
-    (is (.exists (io/file tmpdir "file1.md")))
-    (Thread/sleep 1200)
-    (.delete (io/file tmpdir "file1.md"))
-    (fs/commit! fs tmpdir)
-    (is (.exists (io/file tmpdir "file1.md")))))
-
 (deftest test-content
   (let [fs (fs/add (fs/fileset) (io/file "test/test-assets"))]
     (is (= "this is a file" (slurp (fs/content fs "file1.md"))))
@@ -176,3 +149,13 @@
       (is (not (.exists f))))
     (is (.exists (fs/file fs "file1.md")))
     (is (= "this is a file" (slurp (fs/content fs "file1.md"))))))
+
+(comment
+  (def fs (fs/add (fs/fileset) (io/file "test/test-assets")))
+
+  (clojure.pprint/pprint fs)
+
+
+
+
+  )

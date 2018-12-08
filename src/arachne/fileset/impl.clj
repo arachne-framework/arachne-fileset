@@ -12,20 +12,20 @@
   (:import
    [java.io File]
    [java.util Properties]
-   [java.nio.file Path Files SimpleFileVisitor LinkOption StandardCopyOption
+   [java.nio.file Path Paths Files SimpleFileVisitor LinkOption StandardCopyOption
                   StandardOpenOption FileVisitResult]
    [java.nio.file.attribute FileAttribute]
    [java.nio.channels Channels FileChannel]
    [org.apache.commons.io FileUtils]))
 
-;; These can be truly proces  global, because they only contain immmutable
-;; content-addressed hard links or one-off subdirectories.
-(def global-blob-dir (memoize tmpdir/tmpdir!))
-(def global-scratch-dir (memoize tmpdir/tmpdir!))
-(def default-cache-dir (memoize tmpdir/tmpdir!))
+;; Plan: manage lifecycle & cleanup via reference counting
+;; Plan: clean up api by removing caches and linking options
 
-(def CACHE_VERSION "1.0.0")
-(def mem-cache (atom {}))
+;; These can be truly process global, because they only contain immmutable
+;; content-addressed hard links or one-off subdirectories.
+
+(def global-scratch-dir (memoize tmpdir/tmpdir!))
+
 (def prev-fs (atom {}))
 
 (def link-opts    (into-array LinkOption []))
@@ -34,6 +34,67 @@
 (def copy-opts    (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING
                                                   StandardCopyOption/COPY_ATTRIBUTES]))
 (def continue     FileVisitResult/CONTINUE)
+
+(defprotocol BlobStore
+  "Manager for the lifecycle of immutable binary files."
+  (-blob-add [this path source]
+    "Add the given source file to blob store at the given path,
+    returning a new TmpFile instance.")
+  (-blob-get [this id] "Return a File object in the blob store. The
+  File is guaranteed to exist and to be readonly. If the given ID does
+  not exist in the blobstore, returns nil.")
+  (-blob-release [this id] "Release the blob with the given ID."))
+
+(declare map->TmpFile)
+(declare channel)
+(declare -time)
+
+(defrecord TmpDirBlobStore [tmpdir references]
+  BlobStore
+  (-blob-add [this path source]
+    (let [hash (util/md5 source)
+          ts (.toMillis (Files/getLastModifiedTime source link-opts))
+          id (str hash "." ts)
+          tf (map->TmpFile {:path path :id id :hash hash :time ts :blobstore this})]
+      (locking references
+        (if (@references id)
+          (swap! references update-in [id :refs] inc)
+          (let [blob (.resolve (.toPath tmpdir) id)]
+            (when-not (.exists (.toFile blob))
+              (Files/copy source blob copy-opts)
+              (.setReadOnly (.toFile blob)))
+            (swap! references assoc id {:refs 1
+                                        :ch (channel blob)}))))
+      tf))
+  (-blob-get [this tmpfile]
+    (if-let [ref (@references (:id tmpfile))]
+      (let [file (io/file tmpdir (:id tmpfile))]
+        (when-not (.exists file)
+          (locking (:ch ref)
+            (.position (:ch ref) 0)
+            (FileUtils/copyToFile
+              (Channels/newInputStream (:ch ref))
+              file)
+            (.setLastModified file (:time tmpfile))))
+        file)))
+  (-blob-release [this id]
+    (locking references
+      (swap! references (fn [all-refs]
+                          (if-let [ref (get all-refs id)]
+                            (if (<= (:refs ref) 1)
+                              (do
+                                (when (:ch ref) (.close (:ch ref)))
+                                (Files/delete (.resolve (.toPath tmpdir) id))
+                                (dissoc all-refs id))
+                              (update-in all-refs [id :refs] dec))
+                            all-refs))))))
+
+(defn new-blobstore
+  "Construct a new tmpdir-based Blobstore"
+  []
+  (->TmpDirBlobStore (tmpdir/tmpdir!) (atom {})))
+
+(def global-blobstore (memoize new-blobstore))
 
 (defprotocol ITmpFile
   (-path [this])
@@ -48,12 +109,10 @@
   (-commit!        [this dir])
   (-rm             [this paths])
   (-add            [this src-dir opts])
-  (-add-cached     [this cache-key cache-fn opts])
   (-mv             [this from-path to-path])
-  (-cp             [this src-file dest-tmpfile])
   (-checksum       [this timestamps?]))
 
-(defrecord TmpFile [bdir path id hash time meta channel]
+(defrecord TmpFile [path id hash time meta blobstore]
   ITmpFile
   (-path [this] path)
   (-meta [this] meta)
@@ -61,23 +120,15 @@
   (-time [this] time)
   (-channel [this] channel)
   (-file [this]
-    (let [f (io/file bdir id)]
-      (when-not (.exists f)
-        (locking channel
-          (.position channel 0)
-          (FileUtils/copyToFile (Channels/newInputStream channel) f)))
-      f))
+    (-blob-get blobstore this))
   Object
-  (finalize [_]
-    (when channel (.close channel))))
+  (finalize [_] (-blob-release blobstore id)))
 
 (declare ->TmpFileSet)
 (defn fileset
-  "Create a new, empty fileset. Optionally, takes a directory to use as a
-  persistent cache, otherwise caches in a process-wide temporary directory."
-  ([] (fileset (default-cache-dir)))
-  ([cache-dir]
-   (->TmpFileSet {} (global-blob-dir) (global-scratch-dir) cache-dir)))
+  "Create a new, empty fileset."
+  []
+  (->TmpFileSet {} (global-blobstore) (global-scratch-dir)))
 
 (defn- file
   [^File dir tmpfile]
@@ -96,20 +147,6 @@
 
 (def ^:dynamic *hard-link* nil)
 
-(defn- add-blob!
-  [^File blob ^Path src ^String id link]
-  (let [blob (.toPath blob)
-        out  (.resolve blob id)]
-    (when-not (Files/exists out link-opts)
-      (if link
-        (Files/createLink out src)
-        (let [name (str (.getName out (dec (.getNameCount out))))
-              tmp  (Files/createTempFile blob name nil tmp-attrs)]
-          (Files/copy src tmp copy-opts)
-          (Files/move tmp out move-opts)
-          (.setReadOnly (.toFile out)))))
-    out))
-
 (defn- channel
   "Return an open READ channel to the given path. A reference to this object may be
    maintained to keep the tmpfile from being deleted."
@@ -117,60 +154,22 @@
   (FileChannel/open path (into-array [StandardOpenOption/READ])))
 
 (defn- mkvisitor
-  [^Path root ^File blob tree link]
-  (let [m {:bdir blob}]
-    (proxy [SimpleFileVisitor] []
-      (visitFile [^Path path attr]
-        (with-let [_ continue]
-          (let [p (str (.relativize root path))]
-            (try (let [h (util/md5 path)
-                       t (.toMillis (Files/getLastModifiedTime path link-opts))
-                       i (str h "." t)
-                       ch (channel (add-blob! blob path i link))]
-                   (swap! tree assoc p (map->TmpFile
-                                         (assoc m :path p :id i :hash h
-                                                  :time t :channel ch))))
-                 (catch java.nio.file.NoSuchFileException _
-                   (debug "Tmpdir: file not found: %s\n" (.toString p))))) )))))
+  [^Path root blobstore tree]
+  (proxy [SimpleFileVisitor] []
+    (visitFile [^Path path attr]
+      (with-let [_ continue]
+        (let [relpath (str (.relativize root path))
+              tmpfile (-blob-add blobstore relpath path)]
+          (swap! tree assoc relpath tmpfile))))))
 
 (defn- dir->tree!
-  [dir ^File blob]
+  [dir blobstore]
   (locking dir->tree!
     (let [root (if (instance? java.io.File dir)
                  (.toPath dir)
                  dir)]
       @(with-let [tree (atom {})]
-         (util/walk-file-tree root (mkvisitor root blob tree *hard-link*))))))
-
-(defn- ^File cache-dir
-  [^File cache-location cache-key]
-  (-> cache-location
-      (io/file "fileset")
-      (io/file CACHE_VERSION cache-key)))
-
-(defn- ^File manifest-file
-  [cache-location cache-key]
-  (io/file (cache-dir cache-location cache-key) "manifest.properties"))
-
-(defn- read-manifest
-  [^File manifile ^File bdir]
-  (with-open [r (io/input-stream manifile)]
-    (let [p (doto (Properties.) (.load r))]
-      (-> #(let [id   (.getProperty p %2)
-                 hash (subs id 0 32)
-                 time (Long/parseLong (subs id 33))
-                 ch (channel (.toPath manifile))
-                 m    {:id id :path %2 :hash hash :time time :bdir bdir :channel ch}]
-             (->> m map->TmpFile (assoc %1 %2)))
-          (reduce {} (enumeration-seq (.propertyNames p)))))))
-
-(defn- write-manifest!
-  [^File manifile manifest]
-  (with-open [w (io/output-stream manifile)]
-    (let [p (Properties.)]
-      (doseq [[path {:keys [id]}] manifest]
-        (.setProperty p path id))
-      (.store p w nil))))
+         (util/walk-file-tree root (mkvisitor root blobstore tree))))))
 
 (defn- apply-mergers!
   [mergers ^File old-file path ^File new-file ^File merged-file]
@@ -183,26 +182,6 @@
                   out-stream  (io/output-stream out-file)]
         (merger curr-stream new-stream out-stream))
       (util/move out-file merged-file))))
-
-(defn- get-cached!
-  [cache-location cache-key seedfn scratch]
-  (debug "Adding cached fileset %s...\n" cache-key)
-  (or (get-in @mem-cache [(.getCanonicalPath cache-location) cache-key])
-      (let [cache-dir (cache-dir cache-location cache-key)
-            manifile  (manifest-file cache-location cache-key)
-            store!    #(with-let [m %]
-                         (swap! mem-cache assoc-in
-                           [(.getCanonicalPath cache-location) cache-key] m))]
-        (or (and (.exists manifile)
-                 (store! (read-manifest manifile cache-dir)))
-            (let [tmp-dir (scratch-dir! scratch)]
-              (debug "Not found in cache: %s...\n" cache-key)
-              (.mkdirs cache-dir)
-              (seedfn tmp-dir)
-              (binding [*hard-link* true]
-                (let [m (dir->tree! tmp-dir cache-dir)]
-                  (write-manifest! manifile m)
-                  (store! (read-manifest manifile cache-dir)))))))))
 
 (defn- merge-trees!
   [old new mergers scratch]
@@ -278,27 +257,12 @@
   (let [fs (fileset)]
     (-add fs dir {})))
 
-(defn- prev-fileset
-  "Determine the fileset previously associated with the given directory (either from the cache, or
-   from inspecting the dir)"
-  [^File dir]
-  (let [path (.getCanonicalPath dir)
-        [cached-fs cached-ts] (get @prev-fs path)]
-    (if (and cached-fs (<= (.lastModified dir) cached-ts))
-      cached-fs
-      (when (seq (.list dir))
-        ;; Dir already exists and is not empty, but is newer than cache (or cache doesn't exist)
-        (current-fileset dir)))))
-
-(defrecord TmpFileSet [tree blob scratch cache]
+(defrecord TmpFileSet [tree blobstore scratch]
   ITmpFileSet
-
   (-ls [this]
     (set (vals tree)))
-
-  ;; detect the badness via changed timestamp on the output dir: if it differs from wha we thought we had cached, invalidate the cache and rebuild
   (-commit! [this dir]
-    (let [prev (prev-fileset dir)
+    (let [prev (current-fileset dir)
           {:keys [added removed changed]} (diff* prev this [:id])]
       (debug "Committing fileset...\n")
       (doseq [tmpf (set/union (-ls removed) (-ls changed))
@@ -324,35 +288,21 @@
         (with-let [_ this]
           (swap! prev-fs assoc (.getCanonicalPath ^File dir) [this (.lastModified ^File dir)])
           (debug "Commit complete.\n")))))
-
   (-rm [this tmpfiles]
     (let [{:keys [tree]} this
           treefiles (set (vals tree))
           remove?   (->> tmpfiles set (set/difference treefiles) complement)]
       (assoc this :tree (reduce-kv #(if (remove? %3) %1 (assoc %1 %2 %3)) {} tree))))
-
   (-add [this src-dir opts]
-    (let [{:keys [tree blob scratch]} this
+    (let [{:keys [tree blobstore scratch]} this
           {:keys [mergers include exclude meta]} opts
-          ->tree #(dir->tree! % blob)
+          ->tree #(dir->tree! % blobstore)
           new-tree (-> (->tree src-dir)
                        (filter-tree include exclude)
                        (add-tree-meta meta))
           mrg-tree (when mergers
                      (->tree (merge-trees! tree new-tree mergers scratch)))]
       (assoc this :tree (merge-with merge-tempfiles tree new-tree mrg-tree))))
-
-  (-add-cached [this cache-key cache-fn opts]
-    (let [{:keys [tree blob scratch]} this
-          {:keys [mergers include exclude meta]} opts
-          new-tree (let [cached (get-cached! cache cache-key cache-fn scratch)]
-                     (-> (filter-tree cached include exclude)
-                         (add-tree-meta meta)))
-          mrg-tree (when mergers
-                     (let [merged (merge-trees! tree new-tree mergers scratch)]
-                       (dir->tree! merged blob)))]
-      (assoc this :tree (merge tree new-tree mrg-tree))))
-
   (-mv [this from-path to-path]
     (if (= from-path to-path)
       this
@@ -360,13 +310,6 @@
         (update-in this [:tree] #(-> % (assoc to-path (assoc from :path to-path))
                                      (dissoc from-path)))
         (throw (Exception. (format "not in fileset (%s)" from-path))))))
-
-  (-cp [this src-file dest-tmpfile]
-    (let [hash (util/md5 src-file)
-          p'   (-path dest-tmpfile)]
-      (add-blob! blob src-file hash *hard-link*)
-      (assoc this :tree (merge tree {p' (assoc dest-tmpfile :id hash)}))))
-
   (-checksum [this timestamps?]
     (let [basis (set (map (fn [tmpfile]
                             (select-keys tmpfile [:path :hash (when timestamps? :time)]))

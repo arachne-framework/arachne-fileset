@@ -13,7 +13,6 @@
 (s/def ::fileset (partial satisfies? impl/ITmpFileSet))
 
 (s/fdef arachne.fileset/fileset
-  :args (s/cat :cache-dir (s/? ::directory))
   :ret ::fileset )
 
 (s/fdef arachne.fileset/commit!
@@ -42,19 +41,6 @@
 (s/fdef arachne.fileset/add
   :args (s/cat :fileset ::fileset
                :directory ::directory
-               :options (s/keys* :opt-un [::include ::exclude ::mergers ::meta]))
-  :ret ::fileset)
-
-#_(s/def ::cache-fn
-  (s/fspec :args (s/cat :output-dir ::directory)
-           :ret nil?))
-
-(s/def ::cache-fn ::any-fn)
-
-(s/fdef arachne.fileset/add-cached
-  :args (s/cat :fileset ::fileset
-               :cache-key string?
-               :cache-fn ::cache-fn
                :options (s/keys* :opt-un [::include ::exclude ::mergers ::meta]))
   :ret ::fileset)
 

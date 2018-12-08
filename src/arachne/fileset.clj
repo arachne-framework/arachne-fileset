@@ -7,13 +7,6 @@
             [clojure.java.io :as io]))
 
 (def fileset impl/fileset)
-(def default-cache-dir impl/default-cache-dir)
-
-;; Idea: we could theoretically do garbage collection, if space in the blob store becomes an issue:
-;; - find all instances of FileSet (would require registering in a weak map at creation)
-;; - find all TmpFiles in all FileSets
-;; - delete all blobs not referenced by a TmpFile
-;; - but it's probably unnecessary
 
 (defn commit!
   "Persist the immutable fileset to a concrete directory. The emitted
@@ -52,15 +45,6 @@
             returns (meaning that it should do all its processing eagerly.)"
   [fileset dir & {:keys [include exclude mergers meta] :as opts}]
   (impl/-add fileset dir opts))
-
-(defn add-cached
-  "Like add, but takes a cache-key (string) and cache-fn instead of a directory.
-  If the cache key is not found in the Fileset's cache, then the cache-fn is
-  invoked with a single argument - a directory in which to write the files that
-  boot should add to the cache. In either case, the cached files are added to
-  the fileset."
-  [fileset cache-key cache-fn & {:keys [include exclude mergers meta] :as opts}]
-  (impl/-add-cached fileset cache-key cache-fn opts))
 
 (declare filter)
 (defn remove
@@ -143,11 +127,6 @@
   [fileset path]
   (when-let [f (file fileset path)]
     (io/input-stream f)))
-
-(defn empty
-  "Create a new empty fileset with the same cache dir as the input"
-  [fs]
-  (filter fs (constantly false)))
 
 (defn- merge-tempfile
   "Merge two tempfiles, logging a warning if one would overwrite the other"
