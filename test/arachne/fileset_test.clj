@@ -89,9 +89,11 @@
   (let [fs (fs/fileset)
         fs (fs/add fs (io/file "test/test-assets"))]
     (let [f (io/file "test/test-assets/file1.md")]
-      (is (= (.toMillis (Files/getLastModifiedTime (.toPath f) arachne.fileset.impl/link-opts))
-             (.lastModified f)))
-      (is (= (.lastModified f) (fs/timestamp fs "file1.md")))
+      ;; Files/getLastModifiedTime returns a higher resolution value
+      ;; on linux than File/lastModified.
+      (is (= (.toMillis (Files/getLastModifiedTime (.toPath f)
+                          arachne.fileset.impl/link-opts))
+            (fs/timestamp fs "file1.md")))
       (is (= (fsutil/md5 f) (fs/hash fs "file1.md")))
       (is (= (slurp f) (slurp (fs/content fs "file1.md")))))))
 
