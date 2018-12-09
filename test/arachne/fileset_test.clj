@@ -7,7 +7,7 @@
             [arachne.fileset.specs :as fss]
             [arachne.fileset.util :as fsutil])
   (:import [org.apache.commons.io FileUtils]
-           [java.nio.file Paths]))
+           [java.nio.file Files Paths]))
 
 (comment
 
@@ -89,6 +89,8 @@
   (let [fs (fs/fileset)
         fs (fs/add fs (io/file "test/test-assets"))]
     (let [f (io/file "test/test-assets/file1.md")]
+      (is (= (.toMillis (Files/getLastModifiedTime (.toPath f) arachne.fileset.impl/link-opts))
+             (.lastModified f)))
       (is (= (.lastModified f) (fs/timestamp fs "file1.md")))
       (is (= (fsutil/md5 f) (fs/hash fs "file1.md")))
       (is (= (slurp f) (slurp (fs/content fs "file1.md")))))))
@@ -151,11 +153,12 @@
     (is (= "this is a file" (slurp (fs/content fs "file1.md"))))))
 
 (comment
-  (def fs (fs/add (fs/fileset) (io/file "test/test-assets")))
+  (def fs (fs/fileset))
 
-  (clojure.pprint/pprint fs)
+  (def fs1 (fs/add fs (io/file "test/test-assets")))
+  (def fs1 nil)
 
-
+  (System/gc)
 
 
   )
