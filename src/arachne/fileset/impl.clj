@@ -54,6 +54,7 @@
   (-blob-add [this path source]
     (let [hash (util/md5 source)
           ts (.toMillis (Files/getLastModifiedTime source link-opts))
+          _ (println "Actual Last Modified:" ts)
           id (str hash "." ts)
           tf (map->TmpFile {:path path :id id :hash hash :time ts :blobstore this})]
       (locking references
