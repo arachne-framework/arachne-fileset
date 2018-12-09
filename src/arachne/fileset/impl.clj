@@ -62,6 +62,7 @@
           (let [blob (.resolve (.toPath tmpdir) id)]
             (when-not (.exists (.toFile blob))
               (Files/copy source blob copy-opts)
+              (.setLastModified (.toFile blob) ts)
               (.setReadOnly (.toFile blob)))
             (swap! references assoc id {:refs 1
                                         :ch (channel blob)}))))
